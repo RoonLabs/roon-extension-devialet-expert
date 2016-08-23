@@ -18,7 +18,8 @@ var mysettings = roon.load_config("settings") || {
 };
 
 function makelayout(settings) {
-    var l = {
+    var l = { 
+        values:    settings,
 	layout:    [],
 	has_error: false
     };
@@ -57,21 +58,17 @@ function makelayout(settings) {
 
 var svc_settings = new RoonApiSettings(roon, {
     get_settings: function(cb) {
-        cb(mysettings, makelayout(mysettings).layout);
+        cb(makelayout(mysettings));
     },
     save_settings: function(req, isdryrun, settings) {
-	let l = makelayout(settings);
-	if (l.has_error) {
-	    req.send_complete("NotValid", { settings: settings, layout: l.layout });
-            return;
-        }
-        req.send_complete("Success", { settings: settings, layout: l.layout });
-        if (!isdryrun) {
+	let l = makelayout(settings.values);
+        req.send_complete(l.has_error ? "NotValid" : "Success", { settings: l });
+
+        if (!isdryrun && !l.has_error) {
             var oldport = mysettings.serialport;
-            mysettings = settings;
-            svc_settings.set_settings(mysettings, l.layout);
-            if (oldport != settings.serialport)
-                setup_serial_port(settings.serialport);
+            mysettings = l.values;
+            svc_settings.update_settings(l);
+            if (oldport != mysettings.serialport) setup_serial_port(mysettings.serialport);
             roon.save_config("settings", mysettings);
         }
     }
@@ -99,6 +96,8 @@ setup_serial_port(mysettings.serialport);
 function ev_status(status) {
     let rs232 = devialet.rs232;
 
+    console.log("devialet rs232 status", status);
+
     if (status == "disconnected") {
         svc_status.set_status("Could not connect to Devialet Expert on \"" + mysettings.serialport + "\"", true);
         if (devialet.source_control) { devialet.source_control.destroy(); delete(devialet.source_control); }
@@ -110,30 +109,32 @@ function ev_status(status) {
             state: {
                 display_name:     "Devialet Expert", // XXX need better less generic name -- can we get serial number from the RS232?
                 supports_standby: true,
-                status:           !rs232.get_power() ? "standby" : (rs232.get_source() == mysettings.source ? "selected" : "deselected")
+                status:           !rs232.properties.power ? "standby" : (rs232.properties.source == mysettings.source ? "selected" : "deselected")
             },
             convenience_switch: function (req) {
-                devialet.set_source(mysettings.source, err => { req.send_complete(err ? "Failed" : "Success"); });
+                rs232.set_source(mysettings.source, err => { req.send_complete(err ? "Failed" : "Success"); });
             },
             standby: function (req) {
                 this.state.status = "standby";
-                devialet.set_power(0, err => { req.send_complete(err ? "Failed" : "Success"); });
+                rs232.set_power(0, err => { req.send_complete(err ? "Failed" : "Success"); });
             }
         });
 
         devialet.volume_control = svc_volume_control.new_device({
             state: {
                 display_name: "Devialet Expert", // XXX need better less generic name -- can we get serial number from the RS232?
-                type:         "db",
-                min:          -97.5,
-                max:          30,
-                value:        rs232.get_volume(),
-                step:         0.5,
-                is_muted:     !!rs232.get_mute()
+                volume_type:  "db",
+                volume_min:   -97.5,
+                volume_max:   30,
+                volume_value: rs232.properties.volume,
+                volume_step:  0.5,
+                is_muted:     !!rs232.properties.mute
             },
             set_volume: function (req, mode, value) {
-                rs232.set_volume(mode == "absolute" ? value : (rs232.get_volume() + value),
-                                    (err) => { req.send_complete(err ? "Failed" : "Success"); });
+                let newvol = mode == "absolute" ? value : (rs232.properties.volume + value);
+                if      (newvol < this.state.volume_min) newvol = this.state.volume_min;
+                else if (newvol > this.state.volume_max) newvol = this.state.volume_max;
+                rs232.set_volume(newvol, (err) => { req.send_complete(err ? "Failed" : "Success"); });
             },
             set_mute: function (req, action) {
                 rs232.set_mute(action == "on" ? 1 : (action == "off" ? 0 : "!"),
@@ -147,10 +148,12 @@ function ev_status(status) {
 
 function ev_changed(name, val) {
     let rs232 = devialet.rs232;
-    if (name == "volume" && devialet.volume_control) devialet.volume_control.update_state({ value: val });
-    if (name == "mute"   && devialet.volume_control) devialet.volume_control.update_state({ is_muted: !!val });
+    if (name == "volume" && devialet.volume_control)
+        devialet.volume_control.update_state({ volume_value: val });
+    else if (name == "mute"   && devialet.volume_control)
+        devialet.volume_control.update_state({ is_muted: !!val });
     if ((name == "source" || name == "power") && devialet.source_control)
-        devialet.source_control.update_state({ status: !rs232.get_power() ? "standby" : (val == mysettings.source ? "selected" : "deselected") });
+        devialet.source_control.update_state({ status: !rs232.properties.power ? "standby" : (val == mysettings.source ? "selected" : "deselected") });
 }
 
 var extension = roon.extension({
@@ -164,6 +167,8 @@ var extension = roon.extension({
     optional_services:   [ ],
     provided_services:   [ svc_volume_control, svc_source_control, svc_settings, svc_status ]
 });
+
+roon.start_discovery();
 
 var go;
 go = function() { extension.connect("localhost:9100", () => setTimeout(go, 3000)); };
