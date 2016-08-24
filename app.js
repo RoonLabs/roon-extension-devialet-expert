@@ -169,7 +169,3 @@ var extension = roon.extension({
 });
 
 roon.start_discovery();
-
-var go;
-go = function() { extension.connect("localhost:9100", () => setTimeout(go, 3000)); };
-go();
