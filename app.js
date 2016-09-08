@@ -1,7 +1,6 @@
 "use strict";
 
-var roon                 = require("node-roon-api"),
-    DevialetExpert       = require("node-devialet-expert"),
+var DevialetExpert       = require("node-devialet-expert"),
     RoonApi              = require("node-roon-api"),
     RoonApiSettings      = require('node-roon-api-settings'),
     RoonApiStatus        = require('node-roon-api-status'),
@@ -10,7 +9,17 @@ var roon                 = require("node-roon-api"),
 
 var devialet = { rs232: new DevialetExpert() };
 
-var roon = new RoonApi();
+var roon = new RoonApi({
+    extension_id:        'com.roonlabs.devialet.expert',
+    display_name:        'Devialet Expert Volume and Source Control',
+    display_version:     "1.0.0",
+    publisher:           'Roon Labs, LLC',
+    email:               'contact@roonlabs.com',
+    website:             'https://github.com/RoonLabs/roon-extension-devialet-expert',
+    required_services:   [ ],
+    optional_services:   [ ],
+    provided_services:   [ svc_volume_control, svc_source_control, svc_settings, svc_status ]
+});
 
 var mysettings = roon.load_config("settings") || {
     serialport: "",
@@ -155,17 +164,5 @@ function ev_changed(name, val) {
     if ((name == "source" || name == "power") && devialet.source_control)
         devialet.source_control.update_state({ status: !rs232.properties.power ? "standby" : (val == mysettings.source ? "selected" : "deselected") });
 }
-
-var extension = roon.extension({
-    extension_id:        'com.roonlabs.devialet.expert',
-    display_name:        'Devialet Expert Volume and Source Control',
-    display_version:     "1.0.0",
-    publisher:           'Roon Labs, LLC',
-    email:               'contact@roonlabs.com',
-    website:             'https://github.com/RoonLabs/roon-extension-devialet-expert',
-    required_services:   [ ],
-    optional_services:   [ ],
-    provided_services:   [ svc_volume_control, svc_source_control, svc_settings, svc_status ]
-});
 
 roon.start_discovery();
