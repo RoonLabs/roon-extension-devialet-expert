@@ -16,9 +16,6 @@ var roon = new RoonApi({
     publisher:           'Roon Labs, LLC',
     email:               'contact@roonlabs.com',
     website:             'https://github.com/RoonLabs/roon-extension-devialet-expert',
-    required_services:   [ ],
-    optional_services:   [ ],
-    provided_services:   [ svc_volume_control, svc_source_control, svc_settings, svc_status ]
 });
 
 var mysettings = roon.load_config("settings") || {
@@ -86,6 +83,10 @@ var svc_settings = new RoonApiSettings(roon, {
 var svc_status = new RoonApiStatus(roon);
 var svc_volume_control = new RoonApiVolumeControl(roon);
 var svc_source_control = new RoonApiSourceControl(roon);
+
+roon.init_services({
+    provided_services: [ svc_volume_control, svc_source_control, svc_settings, svc_status ]
+});
 
 function setup_serial_port(port) {
     devialet.rs232.stop();
